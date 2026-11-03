@@ -1,11 +1,14 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
+  UnprocessableEntityException,
 } from '@nestjs/common';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
-import type { Prisma } from '../generated/prisma/client';
+import type { Chamado, Prisma } from '../generated/prisma/client';
+import type { StatusChamado } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { Relogio } from '../common/relogio';
 import type { UsuarioLogado } from '../auth/usuario-logado';
@@ -15,6 +18,9 @@ import { escopoChamados, filtroComentarios, filtroEventos } from './escopo';
 import { CriarChamadoDto } from './dto/criar-chamado.dto';
 import { ListarChamadosDto } from './dto/listar-chamados.dto';
 import { ComentarDto } from './dto/comentar.dto';
+import { validarTransicao } from './transicoes';
+
+type Tx = Prisma.TransactionClient;
 
 const pessoa = { select: { id: true, nome: true, perfil: true } } as const;
 
@@ -183,5 +189,146 @@ export class ChamadosService {
     });
     this.logger.info({ chamadoId: id, interno }, 'comentário registrado');
     return comentario;
+  }
+
+  async assumir(u: UsuarioLogado, id: string) {
+    const chamado = await this.buscarVisivel(u, id);
+    if (chamado.status !== 'ABERTO') {
+      throw new UnprocessableEntityException(
+        'Só chamados abertos podem ser assumidos',
+      );
+    }
+    if (
+      chamado.tecnicoId &&
+      chamado.tecnicoId !== u.id &&
+      u.perfil !== 'GESTOR'
+    ) {
+      throw new ForbiddenException('Chamado atribuído a outro técnico');
+    }
+    validarTransicao(chamado.status, 'EM_ATENDIMENTO', u.perfil);
+    const agora = this.relogio.agora();
+    await this.prisma.$transaction(async (tx) => {
+      if (chamado.tecnicoId !== u.id) {
+        await this.trocarTecnico(tx, chamado, u.id, u.id, agora);
+      }
+      await this.aplicarTransicao(tx, chamado, 'EM_ATENDIMENTO', u.id, agora);
+    });
+    this.logger.info({ chamadoId: id, tecnicoId: u.id }, 'chamado assumido');
+    return this.resumo(id);
+  }
+
+  async atribuir(u: UsuarioLogado, id: string, tecnicoId: string) {
+    const chamado = await this.buscarVisivel(u, id);
+    if (chamado.status === 'FECHADO' || chamado.status === 'CANCELADO') {
+      throw new UnprocessableEntityException('Chamado encerrado');
+    }
+    const tecnico = await this.prisma.usuario.findUnique({
+      where: { id: tecnicoId },
+    });
+    if (!tecnico || tecnico.perfil === 'CLIENTE') {
+      throw new BadRequestException('Técnico inválido');
+    }
+    if (chamado.tecnicoId === tecnicoId) return this.resumo(id);
+    await this.prisma.$transaction((tx) =>
+      this.trocarTecnico(tx, chamado, tecnicoId, u.id, this.relogio.agora()),
+    );
+    this.logger.info({ chamadoId: id, tecnicoId }, 'chamado atribuído');
+    return this.resumo(id);
+  }
+
+  async mudarStatus(u: UsuarioLogado, id: string, para: StatusChamado) {
+    const chamado = await this.buscarVisivel(u, id);
+    validarTransicao(chamado.status, para, u.perfil);
+    if (
+      u.perfil === 'TECNICO' &&
+      chamado.tecnicoId &&
+      chamado.tecnicoId !== u.id
+    ) {
+      throw new ForbiddenException('Só o técnico responsável muda o status');
+    }
+    const agora = this.relogio.agora();
+    await this.prisma.$transaction(async (tx) => {
+      if (para === 'EM_ATENDIMENTO' && !chamado.tecnicoId) {
+        await this.trocarTecnico(tx, chamado, u.id, u.id, agora);
+      }
+      await this.aplicarTransicao(tx, chamado, para, u.id, agora);
+    });
+    this.logger.info(
+      { chamadoId: id, de: chamado.status, para },
+      'status alterado',
+    );
+    return this.resumo(id);
+  }
+
+  private resumo(id: string) {
+    return this.prisma.chamado.findUniqueOrThrow({
+      where: { id },
+      include: incluirResumo,
+    });
+  }
+
+  private async trocarTecnico(
+    tx: Tx,
+    chamado: Chamado,
+    tecnicoId: string,
+    autorId: string,
+    agora: Date,
+  ) {
+    const [anterior, novo] = await Promise.all([
+      chamado.tecnicoId
+        ? tx.usuario.findUnique({ where: { id: chamado.tecnicoId } })
+        : null,
+      tx.usuario.findUniqueOrThrow({ where: { id: tecnicoId } }),
+    ]);
+    await tx.chamado.update({
+      where: { id: chamado.id },
+      data: { tecnicoId },
+    });
+    await this.historico.registrar(
+      {
+        chamadoId: chamado.id,
+        autorId,
+        tipo: 'ATRIBUIDO',
+        valorAnterior: anterior?.nome ?? null,
+        valorNovo: novo.nome,
+        criadoEm: agora,
+      },
+      tx,
+    );
+  }
+
+  /** Único ponto que grava mudança de status (com trava otimista no status atual). */
+  private async aplicarTransicao(
+    tx: Tx,
+    chamado: Chamado,
+    para: StatusChamado,
+    autorId: string,
+    agora: Date,
+  ) {
+    const data: Prisma.ChamadoUpdateInput = { status: para };
+    if (para === 'RESOLVIDO') data.resolvidoEm = agora;
+    if (chamado.status === 'RESOLVIDO' && para === 'EM_ATENDIMENTO') {
+      data.resolvidoEm = null;
+    }
+    const { count } = await tx.chamado.updateMany({
+      where: { id: chamado.id, status: chamado.status },
+      data: data as Prisma.ChamadoUpdateManyMutationInput,
+    });
+    if (count === 0) {
+      throw new ConflictException(
+        'O chamado mudou; recarregue e tente de novo',
+      );
+    }
+    await this.historico.registrar(
+      {
+        chamadoId: chamado.id,
+        autorId,
+        tipo: 'STATUS_ALTERADO',
+        valorAnterior: chamado.status,
+        valorNovo: para,
+        criadoEm: agora,
+      },
+      tx,
+    );
   }
 }

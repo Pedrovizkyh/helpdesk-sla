@@ -1,4 +1,13 @@
-import { Body, Controller, Get, Param, Post, Query } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  HttpCode,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Perfis } from '../auth/decorators/perfis.decorator';
 import { UsuarioAtual } from '../auth/decorators/usuario-atual.decorator';
@@ -7,6 +16,7 @@ import { ChamadosService } from './chamados.service';
 import { CriarChamadoDto } from './dto/criar-chamado.dto';
 import { ListarChamadosDto } from './dto/listar-chamados.dto';
 import { ComentarDto } from './dto/comentar.dto';
+import { AtribuirDto, MudarStatusDto } from './dto/acoes.dto';
 
 @ApiTags('chamados')
 @ApiBearerAuth()
@@ -40,5 +50,31 @@ export class ChamadosController {
     @Body() dto: ComentarDto,
   ) {
     return this.chamados.comentar(u, id, dto);
+  }
+
+  @Perfis('TECNICO', 'GESTOR')
+  @Post(':id/assumir')
+  @HttpCode(200)
+  assumir(@UsuarioAtual() u: UsuarioLogado, @Param('id') id: string) {
+    return this.chamados.assumir(u, id);
+  }
+
+  @Perfis('GESTOR')
+  @Patch(':id/atribuir')
+  atribuir(
+    @UsuarioAtual() u: UsuarioLogado,
+    @Param('id') id: string,
+    @Body() dto: AtribuirDto,
+  ) {
+    return this.chamados.atribuir(u, id, dto.tecnicoId);
+  }
+
+  @Patch(':id/status')
+  mudarStatus(
+    @UsuarioAtual() u: UsuarioLogado,
+    @Param('id') id: string,
+    @Body() dto: MudarStatusDto,
+  ) {
+    return this.chamados.mudarStatus(u, id, dto.status);
   }
 }
