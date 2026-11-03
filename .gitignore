@@ -1,0 +1,13 @@
+.env
+PLANO.md
+CLAUDE.md
+.claude/
+node_modules/
+dist/
+coverage/
+ESTUDO.md
+preview*.webp
+*.log
+.DS_Store
+api/src/generated/
+*.tsbuildinfo
