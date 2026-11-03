@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule, ConfigService } from '@nestjs/config';
+import { ConditionalModule, ConfigModule, ConfigService } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { LoggerModule } from 'nestjs-pino';
 import { randomUUID } from 'node:crypto';
 import { Env, validarEnv } from './config/env';
@@ -20,6 +21,14 @@ import { SlaModule } from './sla/sla.module';
         pinoHttp: {
           level: config.get('LOG_LEVEL'),
           genReqId: (req) => req.headers['x-request-id'] ?? randomUUID(),
+          quietReqLogger: true,
+          serializers: {
+            req: (req: { id: string; method: string; url: string }) => ({
+              id: req.id,
+              method: req.method,
+              url: req.url,
+            }),
+          },
           redact: ['req.headers.authorization', 'req.body.senha'],
           autoLogging: { ignore: (req) => req.url === '/health' },
           transport:
@@ -29,6 +38,10 @@ import { SlaModule } from './sla/sla.module';
         },
       }),
     }),
+    ConditionalModule.registerWhen(
+      ScheduleModule.forRoot(),
+      (env) => env.RUN_SCHEDULER === 'true',
+    ),
     PrismaModule,
     AuthModule,
     UsuariosModule,
