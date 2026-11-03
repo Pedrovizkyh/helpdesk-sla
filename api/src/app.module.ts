@@ -9,6 +9,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { EmpresasModule } from './empresas/empresas.module';
 import { ChamadosModule } from './chamados/chamados.module';
+import { SlaModule } from './sla/sla.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { ChamadosModule } from './chamados/chamados.module';
     UsuariosModule,
     EmpresasModule,
     ChamadosModule,
+    SlaModule,
   ],
   controllers: [HealthController],
 })
