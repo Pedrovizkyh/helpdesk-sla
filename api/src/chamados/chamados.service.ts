@@ -8,11 +8,12 @@ import {
 } from '@nestjs/common';
 import { InjectPinoLogger, PinoLogger } from 'nestjs-pino';
 import type { Chamado, Prisma } from '../generated/prisma/client';
-import type { StatusChamado } from '../generated/prisma/enums';
+import type { Prioridade, StatusChamado } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import { Relogio } from '../common/relogio';
 import type { UsuarioLogado } from '../auth/usuario-logado';
-import { calcularPrazos } from '../sla/calculo-sla';
+import { calcularPrazos, prazoVencido, retomarPrazo } from '../sla/calculo-sla';
+import { SlaService } from '../sla/sla.service';
 import { HistoricoService } from './historico.service';
 import { escopoChamados, filtroComentarios, filtroEventos } from './escopo';
 import { CriarChamadoDto } from './dto/criar-chamado.dto';
@@ -36,6 +37,7 @@ export class ChamadosService {
     private readonly prisma: PrismaService,
     private readonly relogio: Relogio,
     private readonly historico: HistoricoService,
+    private readonly sla: SlaService,
     @InjectPinoLogger(ChamadosService.name)
     private readonly logger: PinoLogger,
   ) {}
@@ -48,12 +50,7 @@ export class ChamadosService {
     });
     if (!empresa?.ativa) throw new BadRequestException('Empresa inválida');
 
-    const politica = await this.prisma.politicaSla.findUnique({
-      where: { prioridade: dto.prioridade },
-    });
-    if (!politica) {
-      throw new BadRequestException('Sem política de SLA para a prioridade');
-    }
+    const politica = await this.sla.politicaDe(dto.prioridade);
 
     const agora = this.relogio.agora();
     const chamado = await this.prisma.chamado.create({
@@ -164,6 +161,10 @@ export class ChamadosService {
       throw new BadRequestException('Chamado encerrado não recebe comentários');
     }
     const agora = this.relogio.agora();
+    const equipe = u.perfil !== 'CLIENTE';
+    const primeiraResposta = equipe && !interno && !chamado.respondidoEm;
+    const clienteRespondeu =
+      u.perfil === 'CLIENTE' && chamado.status === 'AGUARDANDO_CLIENTE';
 
     const comentario = await this.prisma.$transaction(async (tx) => {
       const novo = await tx.comentario.create({
@@ -185,9 +186,33 @@ export class ChamadosService {
         },
         tx,
       );
+      if (primeiraResposta) {
+        await tx.chamado.update({
+          where: { id },
+          data: { respondidoEm: agora },
+        });
+        await this.historico.registrar(
+          {
+            chamadoId: id,
+            autorId: u.id,
+            tipo: 'PRIMEIRA_RESPOSTA',
+            criadoEm: agora,
+          },
+          tx,
+        );
+      }
+      if (clienteRespondeu) {
+        await this.aplicarTransicao(tx, chamado, 'EM_ATENDIMENTO', u.id, agora);
+      }
       return novo;
     });
-    this.logger.info({ chamadoId: id, interno }, 'comentário registrado');
+    this.logger.info(
+      { chamadoId: id, interno, primeiraResposta },
+      'comentário registrado',
+    );
+    if (primeiraResposta && agora > chamado.venceRespostaEm) {
+      await this.sla.marcarEstourado(id, 'resposta', agora);
+    }
     return comentario;
   }
 
@@ -257,7 +282,68 @@ export class ChamadosService {
       { chamadoId: id, de: chamado.status, para },
       'status alterado',
     );
+    if (para === 'RESOLVIDO') await this.conferirVencimento(id, agora);
     return this.resumo(id);
+  }
+
+  async mudarPrioridade(u: UsuarioLogado, id: string, prioridade: Prioridade) {
+    const chamado = await this.buscarVisivel(u, id);
+    if (
+      u.perfil === 'TECNICO' &&
+      chamado.tecnicoId &&
+      chamado.tecnicoId !== u.id
+    ) {
+      throw new ForbiddenException(
+        'Só o técnico responsável muda a prioridade',
+      );
+    }
+    if (['RESOLVIDO', 'FECHADO', 'CANCELADO'].includes(chamado.status)) {
+      throw new UnprocessableEntityException(
+        'Não é possível mudar a prioridade de um chamado resolvido ou encerrado',
+      );
+    }
+    if (chamado.prioridade === prioridade) return this.resumo(id);
+
+    const politica = await this.sla.politicaDe(prioridade);
+    const prazos = calcularPrazos(
+      chamado.criadoEm,
+      politica,
+      chamado.minutosPausados,
+    );
+    const agora = this.relogio.agora();
+    await this.prisma.$transaction(async (tx) => {
+      await tx.chamado.update({
+        where: { id },
+        data: { prioridade, ...prazos },
+      });
+      await this.historico.registrar(
+        {
+          chamadoId: id,
+          autorId: u.id,
+          tipo: 'PRIORIDADE_ALTERADA',
+          valorAnterior: chamado.prioridade,
+          valorNovo: prioridade,
+          criadoEm: agora,
+        },
+        tx,
+      );
+    });
+    this.logger.info(
+      { chamadoId: id, de: chamado.prioridade, para: prioridade },
+      'prioridade alterada e prazos recalculados',
+    );
+    await this.conferirVencimento(id, agora);
+    return this.resumo(id);
+  }
+
+  /** Marca na hora se a ação deixou o chamado fora do prazo (o job pega o resto). */
+  private async conferirVencimento(id: string, agora: Date) {
+    const atual = await this.prisma.chamado.findUniqueOrThrow({
+      where: { id },
+    });
+    if (atual.slaEstourado) return;
+    const tipo = prazoVencido(atual, agora);
+    if (tipo) await this.sla.marcarEstourado(id, tipo, agora);
   }
 
   private resumo(id: string) {
@@ -305,14 +391,25 @@ export class ChamadosService {
     autorId: string,
     agora: Date,
   ) {
-    const data: Prisma.ChamadoUpdateInput = { status: para };
+    const data: Prisma.ChamadoUpdateManyMutationInput = { status: para };
+    if (para === 'AGUARDANDO_CLIENTE') data.pausadoEm = agora;
+    if (chamado.status === 'AGUARDANDO_CLIENTE') {
+      const r = retomarPrazo(chamado, agora);
+      data.venceResolucaoEm = r.venceResolucaoEm;
+      data.minutosPausados = r.minutosPausados;
+      data.pausadoEm = null;
+      this.logger.info(
+        { chamadoId: chamado.id, minutosParados: r.minutosParados },
+        'prazo de resolução retomado',
+      );
+    }
     if (para === 'RESOLVIDO') data.resolvidoEm = agora;
     if (chamado.status === 'RESOLVIDO' && para === 'EM_ATENDIMENTO') {
       data.resolvidoEm = null;
     }
     const { count } = await tx.chamado.updateMany({
       where: { id: chamado.id, status: chamado.status },
-      data: data as Prisma.ChamadoUpdateManyMutationInput,
+      data,
     });
     if (count === 0) {
       throw new ConflictException(

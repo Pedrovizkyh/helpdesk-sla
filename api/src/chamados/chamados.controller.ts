@@ -16,7 +16,11 @@ import { ChamadosService } from './chamados.service';
 import { CriarChamadoDto } from './dto/criar-chamado.dto';
 import { ListarChamadosDto } from './dto/listar-chamados.dto';
 import { ComentarDto } from './dto/comentar.dto';
-import { AtribuirDto, MudarStatusDto } from './dto/acoes.dto';
+import {
+  AtribuirDto,
+  MudarPrioridadeDto,
+  MudarStatusDto,
+} from './dto/acoes.dto';
 
 @ApiTags('chamados')
 @ApiBearerAuth()
@@ -76,5 +80,15 @@ export class ChamadosController {
     @Body() dto: MudarStatusDto,
   ) {
     return this.chamados.mudarStatus(u, id, dto.status);
+  }
+
+  @Perfis('TECNICO', 'GESTOR')
+  @Patch(':id/prioridade')
+  mudarPrioridade(
+    @UsuarioAtual() u: UsuarioLogado,
+    @Param('id') id: string,
+    @Body() dto: MudarPrioridadeDto,
+  ) {
+    return this.chamados.mudarPrioridade(u, id, dto.prioridade);
   }
 }
