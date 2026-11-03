@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "react",
+    "typescript",
+    "jsx-a11y"
+  ],
+  "ignorePatterns": [
+    "dist/**"
+  ],
+  "rules": {
+    "react/only-export-components": "off",
+    "jsx-a11y/prefer-tag-over-role": "off"
+  }
+}
