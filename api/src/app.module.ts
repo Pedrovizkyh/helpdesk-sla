@@ -14,6 +14,7 @@ import { UsuariosModule } from './usuarios/usuarios.module';
 import { EmpresasModule } from './empresas/empresas.module';
 import { ChamadosModule } from './chamados/chamados.module';
 import { SlaModule } from './sla/sla.module';
+import { MetricasModule } from './metricas/metricas.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { SlaModule } from './sla/sla.module';
     EmpresasModule,
     ChamadosModule,
     SlaModule,
+    MetricasModule,
   ],
   controllers: [HealthController],
 })
