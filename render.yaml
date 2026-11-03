@@ -1,0 +1,37 @@
+# Blueprint do Render: API + worker da fila + job de SLA num único serviço (plano gratuito)
+services:
+  - type: web
+    name: helpdesk-sla-api
+    runtime: node
+    plan: free
+    rootDir: api
+    buildCommand: npm ci --include=dev && npm run build
+    # Migrations rodam na subida; o seed NÃO roda aqui (ele apaga os dados)
+    startCommand: npx prisma migrate deploy && npm run start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: DATABASE_URL
+        sync: false # string do Neon
+      - key: REDIS_URL
+        sync: false # rediss:// do Upstash
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 8h
+      - key: CORS_ORIGINS
+        sync: false # https://seu-front.vercel.app
+      - key: WEB_URL
+        sync: false # mesma URL do front, usada nos links dos e-mails
+      - key: RUN_WORKER
+        value: "true"
+      - key: RUN_SCHEDULER
+        value: "true"
+      # E-mail desligado em produção; para testar, use um SMTP de sandbox + EMAIL_REDIRECT_TO
+      - key: EMAIL_ENABLED
+        value: "false"
