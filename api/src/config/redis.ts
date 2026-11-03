@@ -1,4 +1,4 @@
-import type { RedisOptions } from 'ioredis';
+import type { RedisOptions } from 'bullmq';
 
 export function redisOptionsFromUrl(url: string): RedisOptions {
   const u = new URL(url);

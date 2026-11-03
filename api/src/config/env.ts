@@ -19,6 +19,7 @@ export const envSchema = z
     JWT_SECRET: z.string().min(16, 'JWT_SECRET precisa de 16+ caracteres'),
     JWT_EXPIRES_IN: z.string().default('8h'),
     CORS_ORIGINS: z.string().default('http://localhost:5173'),
+    WEB_URL: z.string().url().default('http://localhost:5173'),
     RUN_WORKER: booleano,
     RUN_SCHEDULER: booleano,
     EMAIL_ENABLED: booleano,
