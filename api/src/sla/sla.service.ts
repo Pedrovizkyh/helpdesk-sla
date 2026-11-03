@@ -4,11 +4,13 @@ import type { Prioridade } from '../generated/prisma/enums';
 import { PrismaService } from '../prisma/prisma.service';
 import type { TipoVencimento } from './calculo-sla';
 import { AtualizarPoliticaDto } from './dto/atualizar-politica.dto';
+import { NotificacoesService } from '../notificacoes/notificacoes.service';
 
 @Injectable()
 export class SlaService {
   constructor(
     private readonly prisma: PrismaService,
+    private readonly notificacoes: NotificacoesService,
     @InjectPinoLogger(SlaService.name) private readonly logger: PinoLogger,
   ) {}
 
@@ -72,6 +74,7 @@ export class SlaService {
     });
     if (marcou) {
       this.logger.warn({ chamadoId, tipo }, 'SLA estourado');
+      await this.notificacoes.slaEstourado(chamadoId, tipo);
     }
     return marcou;
   }

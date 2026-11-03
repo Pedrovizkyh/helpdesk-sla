@@ -14,6 +14,7 @@ import { Relogio } from '../common/relogio';
 import type { UsuarioLogado } from '../auth/usuario-logado';
 import { calcularPrazos, prazoVencido, retomarPrazo } from '../sla/calculo-sla';
 import { SlaService } from '../sla/sla.service';
+import { NotificacoesService } from '../notificacoes/notificacoes.service';
 import { HistoricoService } from './historico.service';
 import { escopoChamados, filtroComentarios, filtroEventos } from './escopo';
 import { CriarChamadoDto } from './dto/criar-chamado.dto';
@@ -38,6 +39,7 @@ export class ChamadosService {
     private readonly relogio: Relogio,
     private readonly historico: HistoricoService,
     private readonly sla: SlaService,
+    private readonly notificacoes: NotificacoesService,
     @InjectPinoLogger(ChamadosService.name)
     private readonly logger: PinoLogger,
   ) {}
@@ -78,6 +80,7 @@ export class ChamadosService {
       { chamadoId: chamado.id, prioridade: chamado.prioridade },
       'chamado aberto',
     );
+    await this.notificacoes.chamadoAberto(chamado.id);
     return chamado;
   }
 
@@ -212,6 +215,13 @@ export class ChamadosService {
     );
     if (primeiraResposta && agora > chamado.venceRespostaEm) {
       await this.sla.marcarEstourado(id, 'resposta', agora);
+    }
+    if (equipe && !interno) {
+      await this.notificacoes.respostaPublica(
+        id,
+        comentario.autor.nome,
+        dto.texto,
+      );
     }
     return comentario;
   }
