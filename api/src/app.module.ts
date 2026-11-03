@@ -8,6 +8,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { AuthModule } from './auth/auth.module';
 import { UsuariosModule } from './usuarios/usuarios.module';
 import { EmpresasModule } from './empresas/empresas.module';
+import { ChamadosModule } from './chamados/chamados.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { EmpresasModule } from './empresas/empresas.module';
     AuthModule,
     UsuariosModule,
     EmpresasModule,
+    ChamadosModule,
   ],
   controllers: [HealthController],
 })
