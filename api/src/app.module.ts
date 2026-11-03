@@ -1,6 +1,9 @@
 import { Module } from '@nestjs/common';
 import { ConditionalModule, ConfigModule, ConfigService } from '@nestjs/config';
 import { ScheduleModule } from '@nestjs/schedule';
+import { BullModule } from '@nestjs/bullmq';
+import { redisOptionsFromUrl } from './config/redis';
+import { EmailWorkerModule } from './notificacoes/email-worker.module';
 import { LoggerModule } from 'nestjs-pino';
 import { randomUUID } from 'node:crypto';
 import { Env, validarEnv } from './config/env';
@@ -38,6 +41,16 @@ import { SlaModule } from './sla/sla.module';
         },
       }),
     }),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService<Env, true>) => ({
+        connection: redisOptionsFromUrl(config.get('REDIS_URL')),
+      }),
+    }),
+    ConditionalModule.registerWhen(
+      EmailWorkerModule,
+      (env) => env.RUN_WORKER === 'true',
+    ),
     ConditionalModule.registerWhen(
       ScheduleModule.forRoot(),
       (env) => env.RUN_SCHEDULER === 'true',
