@@ -1,0 +1,138 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Perfil {
+  CLIENTE
+  TECNICO
+  GESTOR
+}
+
+enum Prioridade {
+  CRITICA
+  ALTA
+  MEDIA
+  BAIXA
+}
+
+enum StatusChamado {
+  ABERTO
+  EM_ATENDIMENTO
+  AGUARDANDO_CLIENTE
+  RESOLVIDO
+  FECHADO
+  CANCELADO
+}
+
+enum TipoEvento {
+  ABERTO
+  ATRIBUIDO
+  STATUS_ALTERADO
+  PRIORIDADE_ALTERADA
+  COMENTARIO
+  NOTA_INTERNA
+  PRIMEIRA_RESPOSTA
+  SLA_ESTOURADO
+}
+
+model Empresa {
+  id       String    @id @default(cuid())
+  nome     String
+  cnpj     String    @unique
+  ativa    Boolean   @default(true)
+  criadoEm DateTime  @default(now())
+  usuarios Usuario[]
+  chamados Chamado[]
+}
+
+model Usuario {
+  id                String            @id @default(cuid())
+  nome              String
+  email             String            @unique
+  senhaHash         String
+  perfil            Perfil
+  /// Preenchido só para clientes
+  empresaId         String?
+  empresa           Empresa?          @relation(fields: [empresaId], references: [id])
+  criadoEm          DateTime          @default(now())
+  chamadosAbertos   Chamado[]         @relation("ChamadoSolicitante")
+  chamadosAtendidos Chamado[]         @relation("ChamadoTecnico")
+  comentarios       Comentario[]
+  eventos           EventoHistorico[]
+}
+
+model Chamado {
+  id               String            @id @default(cuid())
+  numero           Int               @unique @default(autoincrement())
+  titulo           String
+  descricao        String
+  categoria        String
+  prioridade       Prioridade
+  status           StatusChamado     @default(ABERTO)
+  venceRespostaEm  DateTime
+  venceResolucaoEm DateTime
+  respondidoEm     DateTime?
+  resolvidoEm      DateTime?
+  /// Início da pausa atual (status AGUARDANDO_CLIENTE)
+  pausadoEm        DateTime?
+  /// Total já pausado, para recalcular os prazos a partir da abertura
+  minutosPausados  Int               @default(0)
+  slaEstourado     Boolean           @default(false)
+  empresaId        String
+  empresa          Empresa           @relation(fields: [empresaId], references: [id])
+  solicitanteId    String
+  solicitante      Usuario           @relation("ChamadoSolicitante", fields: [solicitanteId], references: [id])
+  tecnicoId        String?
+  tecnico          Usuario?          @relation("ChamadoTecnico", fields: [tecnicoId], references: [id])
+  criadoEm         DateTime          @default(now())
+  atualizadoEm     DateTime          @updatedAt
+  comentarios      Comentario[]
+  eventos          EventoHistorico[]
+
+  @@index([status])
+  @@index([empresaId])
+  @@index([tecnicoId])
+  @@index([slaEstourado, status])
+}
+
+model PoliticaSla {
+  id               String     @id @default(cuid())
+  prioridade       Prioridade @unique
+  minutosResposta  Int
+  minutosResolucao Int
+  atualizadoEm     DateTime   @updatedAt
+}
+
+model Comentario {
+  id        String   @id @default(cuid())
+  texto     String
+  interno   Boolean  @default(false)
+  chamadoId String
+  chamado   Chamado  @relation(fields: [chamadoId], references: [id], onDelete: Cascade)
+  autorId   String
+  autor     Usuario  @relation(fields: [autorId], references: [id])
+  criadoEm  DateTime @default(now())
+
+  @@index([chamadoId])
+}
+
+model EventoHistorico {
+  id            String     @id @default(cuid())
+  tipo          TipoEvento
+  valorAnterior String?
+  valorNovo     String?
+  chamadoId     String
+  chamado       Chamado    @relation(fields: [chamadoId], references: [id], onDelete: Cascade)
+  /// Nulo quando o evento é do sistema (ex.: job de SLA)
+  autorId       String?
+  autor         Usuario?   @relation(fields: [autorId], references: [id])
+  criadoEm      DateTime   @default(now())
+
+  @@index([chamadoId])
+}
