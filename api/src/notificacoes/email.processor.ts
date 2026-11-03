@@ -5,7 +5,12 @@ import { EmailJob, FILA_EMAILS } from './constantes';
 import { MailerService } from './mailer.service';
 
 /** Worker: consome a fila "emails". Se o envio falhar, o BullMQ tenta de novo. */
-@Processor(FILA_EMAILS, { concurrency: 5 })
+// drainDelay/stalledInterval maiores reduzem comandos no Redis ocioso (Upstash grátis)
+@Processor(FILA_EMAILS, {
+  concurrency: 5,
+  drainDelay: 30,
+  stalledInterval: 120_000,
+})
 export class EmailProcessor extends WorkerHost {
   constructor(
     private readonly mailer: MailerService,

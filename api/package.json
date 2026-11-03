@@ -103,5 +103,8 @@
     "moduleNameMapper": {
       "^(\\.{1,2}/.*)\\.js$": "$1"
     }
+  },
+  "engines": {
+    "node": ">=24"
   }
 }
