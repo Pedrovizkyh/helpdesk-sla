@@ -2,18 +2,17 @@
 
 [![CI](https://github.com/Pedrovizkyh/helpdesk-sla/actions/workflows/ci.yml/badge.svg)](https://github.com/Pedrovizkyh/helpdesk-sla/actions/workflows/ci.yml)
 
-**🌐 Site:** `https://SEU-FRONT.vercel.app` &nbsp;·&nbsp; **⚙️ API:** `https://SEU-SERVICO.onrender.com` &nbsp;·&nbsp; **📖 Swagger:** `https://SEU-SERVICO.onrender.com/docs`
+**🌐 Site:** <https://helpdesk-sla-wine.vercel.app> &nbsp;·&nbsp; **⚙️ API:** <https://helpdesk-sla-api.onrender.com> &nbsp;·&nbsp; **📖 Swagger:** <https://helpdesk-sla-api.onrender.com/docs>
 
-<!-- TODO: trocar os três links acima pelas URLs reais depois do deploy -->
+> A API roda no plano grátis do Render e dorme após ~15 min sem acesso: o primeiro login pode levar cerca de 1 minuto.
 
 Empresas clientes abrem chamados, técnicos atendem e o sistema controla o prazo (SLA) de cada um: calcula os prazos na abertura, pausa o relógio enquanto aguarda o cliente, marca o que estourou num job agendado e avisa por e-mail através de uma fila.
 
-<!-- TODO: GIF do fluxo cliente → técnico → gestor -->
-<p align="center"><em>[ espaço para o GIF do fluxo cliente → técnico → gestor ]</em></p>
+<p align="center"><img src="docs/img/fluxo.gif" alt="Fluxo: cliente abre o chamado, técnico assume, responde e deixa uma nota interna, gestor acompanha no painel" width="900"></p>
 
 | Lista de chamados | Detalhe com linha do tempo | Painel do gestor |
 | --- | --- | --- |
-| <!-- TODO: print --> _[ print ]_ | <!-- TODO: print --> _[ print ]_ | <!-- TODO: print --> _[ print ]_ |
+| ![Lista de chamados com status, prioridade e SLA](docs/img/lista.webp) | ![Detalhe do chamado com linha do tempo e nota interna](docs/img/detalhe.webp) | ![Painel do gestor com métricas de SLA](docs/img/painel.webp) |
 
 ## Logins de demonstração
 
